@@ -1,13 +1,17 @@
 using System;
+using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
 using System.Threading.Tasks;
 using AspNet.Security.OpenIdConnect.Primitives;
 using AuthorizationServer.Models;
 using AuthorizationServer.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
 using OpenIddict.Core;
 using OpenIddict.EntityFrameworkCore.Models;
@@ -16,12 +20,14 @@ namespace AuthorizationServer
 {
     public class Startup
     {
+        private AuthOptions _authOptions;
+
+        public IConfiguration Configuration { get; }
+
         public Startup(IConfiguration configuration)
         {
             Configuration = configuration;
         }
-
-        public IConfiguration Configuration { get; }
 
         public void ConfigureServices(IServiceCollection services)
         {
@@ -35,6 +41,14 @@ namespace AuthorizationServer
                 // to replace the default OpenIddict entities.
                 options.UseOpenIddict();
             });
+
+            services.Configure<AuthOptions>(options => Configuration.GetSection("Auth").Bind(options));
+
+            // configure strongly typed settings objects
+            var authSection = Configuration.GetSection("Auth");
+            services.Configure<AuthOptions>(authSection);
+
+            _authOptions = authSection.Get<AuthOptions>();
 
             services.AddIdentity<ApplicationUser, IdentityRole>()
                 .AddEntityFrameworkStores<ApplicationDbContext>();
@@ -56,7 +70,7 @@ namespace AuthorizationServer
                 {
                     // Register the Entity Framework stores and models.
                     options.UseEntityFrameworkCore()
-                           .UseDbContext<ApplicationDbContext>();
+                        .UseDbContext<ApplicationDbContext>();
                 })
 
                 // Register the OpenIddict server handler.
@@ -69,21 +83,21 @@ namespace AuthorizationServer
 
                     // Enable the authorization, logout, userinfo, and introspection endpoints.
                     options.EnableAuthorizationEndpoint("/connect/authorize")
-                           .EnableLogoutEndpoint("/connect/logout")
-                           .EnableIntrospectionEndpoint("/connect/introspect")
-                           .EnableUserinfoEndpoint("/api/userinfo");
+                        .EnableLogoutEndpoint("/connect/logout")
+                        .EnableIntrospectionEndpoint("/connect/introspect")
+                        .EnableUserinfoEndpoint("/api/userinfo");
 
                     // Mark the "email", "profile" and "roles" scopes as supported scopes.
                     options.RegisterScopes(OpenIdConnectConstants.Scopes.Email,
-                                           OpenIdConnectConstants.Scopes.Profile,
-                                           OpenIddictConstants.Scopes.Roles);
+                        OpenIdConnectConstants.Scopes.Profile,
+                        OpenIddictConstants.Scopes.Roles);
 
                     // Note: the sample only uses the implicit code flow but you can enable
                     // the other flows if you need to support implicit, password or client credentials.
                     options.AllowImplicitFlow();
 
                     // During development, you can disable the HTTPS requirement.
-                    options.DisableHttpsRequirement();
+                    //options.DisableHttpsRequirement();
 
                     // Register a new ephemeral key, that is discarded when the application
                     // shuts down. Tokens signed using this key are automatically invalidated.
@@ -106,15 +120,30 @@ namespace AuthorizationServer
 
                     // Note: to use JWT access tokens instead of the default
                     // encrypted format, the following line is required:
-                    //
-                    // options.UseJsonWebTokens();
-                })
+                    options.UseJsonWebTokens();
+                });
 
-                // Register the OpenIddict validation handler.
-                // Note: the OpenIddict validation handler is only compatible with the
-                // default token format or with reference tokens and cannot be used with
-                // JWT tokens. For JWT tokens, use the Microsoft JWT bearer handler.
-                .AddValidation();
+            JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
+            JwtSecurityTokenHandler.DefaultOutboundClaimTypeMap.Clear();
+
+            services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                options.RequireHttpsMetadata = true;
+                options.Authority = _authOptions.Authority;
+                options.MetadataAddress = $"{_authOptions.Authority}.well-known/openid-configuration";
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    NameClaimType = OpenIdConnectConstants.Claims.Name,
+                    RoleClaimType = OpenIdConnectConstants.Claims.Role,
+                    ValidAudiences = new List<string>
+                    {
+                        "resource-server-1",
+                        "resource-server-2"
+                    },
+                };
+            });
+
 
             services.AddCors();
             services.AddMvc();
