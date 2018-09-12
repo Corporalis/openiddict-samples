@@ -1,12 +1,21 @@
 using System;
+using System.IdentityModel.Tokens.Jwt;
 using AspNet.Security.OAuth.Introspection;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ResourceServer01
 {
     public class Startup
     {
+        public IConfiguration Configuration { get; }
+
+        public Startup(IConfiguration configuration)
+        {
+            Configuration = configuration;
+        }
+
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddAuthentication(options =>
@@ -16,7 +25,7 @@ namespace ResourceServer01
 
             .AddOAuthIntrospection(options =>
             {
-                options.Authority = new Uri("http://localhost:12345/");
+                options.Authority = new Uri("https://localhost:44363/");
                 options.Audiences.Add("resource-server-1");
                 options.ClientId = "resource-server-1";
                 options.ClientSecret = "846B62D0-DEF9-4215-A99D-86E6B8DAB342";
@@ -30,8 +39,8 @@ namespace ResourceServer01
             // If you prefer using JWT, don't forget to disable the automatic
             // JWT -> WS-Federation claims mapping used by the JWT middleware:
             //
-            // JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
-            // JwtSecurityTokenHandler.DefaultOutboundClaimTypeMap.Clear();
+            JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
+            JwtSecurityTokenHandler.DefaultOutboundClaimTypeMap.Clear();
             //
             // services.AddAuthentication(options =>
             // {
@@ -58,8 +67,8 @@ namespace ResourceServer01
             app.UseCors(builder =>
             {
                 builder.WithOrigins("http://localhost:9000");
-                builder.WithMethods("GET");
-                builder.WithHeaders("Authorization");
+                builder.AllowAnyMethod();
+                builder.AllowAnyHeader();
             });
 
             app.UseAuthentication();
